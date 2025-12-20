@@ -20,8 +20,14 @@ System_Boundary(jss, "Jewelry Store System") {
   Container(mq, "Messages Queue", "RabbitMQ", "Sends messages about new orders, status changes via topics")
 
   ' ========== НОВЫЕ КОМПОНЕНТЫ (трейсинг) ==========
-  Container(otel_collector, "OpenTelemetry\nCollector", "OTel Collector", "Receives telemetry via OTLP/gRPC")
-  Container(jaeger, "Jaeger", "Jaeger UI", "Stores and visualizes traces")
+  Container(otel_collector, "OpenTelemetry\nCollector", "OTel Collector", "Receives telemetry via OTLP/gRPC") #Red
+  Container(jaeger, "Jaeger", "Jaeger UI", "Stores and visualizes traces") #Red
+
+  ' ========== НОВЫЕ КОМПОНЕНТЫ (Support трейсинг) ==========
+  Person(support, "Support", "Check OTLP data") #Red
+
+  ' ========== НОВЫЕ КОМПОНЕНТЫ (Автоматический анализ трейсов) ==========
+  Container(trace_analitic_service, "Сервиси аналитики трейсов", "Trace Analitic", "Читает трейсы, анализирует и сравнивает с пороговыми значениями") #Green
 }
 
 ' ========== Люди (акторы) ==========
@@ -53,11 +59,16 @@ Rel(operator, mes_frontend, "")
 Rel(mes_frontend, mes_api, "")
 
 ' ========== Связи новых компонентов ==========
-Rel(shop_api, otel_collector, "OTLP/gRPC\n(traces/metrics)", "red")
-Rel(crm_api, otel_collector, "OTLP/gRPC\n(traces/metrics)", "red")
-Rel(mes_api, otel_collector, "OTLP/gRPC\n(traces/metrics)", "red")
-Rel(mq, otel_collector, "AMQP exporter\n(message traces)", "red")
-Rel(otel_collector, jaeger, "OTLP/gRPC\n(batched spans)", "red")
+shop_api -[#red]-> otel_collector : <color:red>OTLP gRPC (traces, metrics)</color>
+crm_api -[#red]-> otel_collector : <color:red>OTLP gRPC (traces, metrics)</color>
+mes_api -[#red]-> otel_collector : <color:red>OTLP gRPC (traces, metrics)</color>
+mq -[#red]-> otel_collector : <color:red>OTLP gRPC (message traces)</color>
+otel_collector -[#red]-> jaeger : <color:red>OTLP gRPC (batched spans)</color>
+support -[#red]-> jaeger : <color:red>check data</color>
+
+trace_analitic_service -[#green]-> jaeger : <color:green>get data</color>
+trace_analitic_service -[#green]-> support : <color:green>notify about ALL OK - by schedule</color>
+trace_analitic_service -[#green]-> support : <color:green>notify about HAS PROBLEM</color>
 
 ' Стили и легенда
 ' Hide legend if not needed
