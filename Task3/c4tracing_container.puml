@@ -1,0 +1,71 @@
+@startuml "Александрит - ювелирный маркетплейс"
+
+!include <C4/C4_Container>
+
+left to right direction
+
+' ========== Система ==========
+System_Boundary(jss, "Jewelry Store System") {
+  ' ========== Контейнеры ==========
+  Container(shop_frontend, "Internet Shop", "Vue, TypeScript, Threejs", "User can make an order, upload 3d model, work in 3d editor")
+  Container(shop_api, "Shop API", "SpringBoot", "Provides list of shop items;\nReceives user-generated/uploaded 3D file;\nSaves order info (customer view)")
+  Container(crm_frontend, "CRM", "Vue, TypeScript", "Manages customer relationships and order tracking")
+  Container(crm_api, "CRM API", "SpringBoot", "Backend for CRM")
+  Container(mes_api, "MES API", "C#", "Assigns orders to operators;\nShows list of orders;\nCalculates order price")
+  Container(mes_frontend, "MES", "React, TypeScript", "Interface to assign orders to operators, view order list")
+  
+  ContainerDb(shop_db, "Shop DB", "PostgreSQL", "Holds main info about customers and orders (customer view)")
+  ContainerDb(mes_db, "MES DB", "PostgreSQL", "Holds info about orders, operator assignments, statuses (MES view)")
+  Container(storage, "3D Files Storage", "S3-based storage", "Stores 3D files for price calculation/manufacturing")
+  Container(mq, "Messages Queue", "RabbitMQ", "Sends messages about new orders, status changes via topics")
+
+  ' ========== НОВЫЕ КОМПОНЕНТЫ (трейсинг) ==========
+  Container(otel_collector, "OpenTelemetry\nCollector", "OTel Collector", "Receives telemetry via OTLP/gRPC")
+  Container(jaeger, "Jaeger", "Jaeger UI", "Stores and visualizes traces")
+}
+
+' ========== Люди (акторы) ==========
+Person(customer, "Customer", "Makes orders, uploads 3D models")
+Person(api_user, "API User", "Integrates with MES API")
+Person(seller, "Seller", "Operates orders, confirms manufacturing for user")
+Person(operator, "Operator", "Takes order in work, manufactures jewelry")
+
+
+' ========== Взаимодействия ==========
+Rel(customer, shop_frontend, "")
+Rel(shop_frontend, shop_api, "")
+Rel(shop_api, shop_db, "")
+Rel(shop_api, storage, "")
+'Rel(shop_api, mq, "Publishes\n(order created)")
+
+Rel(seller, crm_frontend, "")
+Rel(crm_frontend, crm_api, "")
+Rel(crm_api, shop_db, "")
+Rel(crm_api, storage, "")
+BiRel(crm_api, mq, "")
+
+Rel(api_user, mes_api, "")
+Rel(mes_api, storage, "")
+Rel(mes_api, mes_db, "")
+BiRel(mq, mes_api, "")
+
+Rel(operator, mes_frontend, "")
+Rel(mes_frontend, mes_api, "")
+
+' ========== Связи новых компонентов ==========
+Rel(shop_api, otel_collector, "OTLP/gRPC\n(traces/metrics)", "red")
+Rel(crm_api, otel_collector, "OTLP/gRPC\n(traces/metrics)", "red")
+Rel(mes_api, otel_collector, "OTLP/gRPC\n(traces/metrics)", "red")
+Rel(mq, otel_collector, "AMQP exporter\n(message traces)", "red")
+Rel(otel_collector, jaeger, "OTLP/gRPC\n(batched spans)", "red")
+
+' Стили и легенда
+' Hide legend if not needed
+' Legend(left)
+'   Customer <color:red>●</color> External person
+'   <<Container>> <color:blue>■</color>
+'   <<DB>> <color:green>⬟</color>
+'   <<Queue>> <color:purple>⬠</color>
+' End legend
+
+@enduml
