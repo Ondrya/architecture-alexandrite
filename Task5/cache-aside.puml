@@ -1,0 +1,70 @@
+@startuml Cache-Aside
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam sequenceArrowThickness 1
+skinparam roundcorner 10
+skinparam maxmessagesize 150
+
+actor Operator as operator #6699FF
+participant "MES API\n(C# Backend)" as mes_api #33CC99
+participant "Redis Cache" as cache #FF9933
+participant "MES DB\n(PostgreSQL)" as mes_db #6699FF
+participant "RabbitMQ" as rabbitmq #FF6666
+
+box "Чтение списка заказов"
+operator -> mes_api : GET /api/orders?status=new&page=1
+activate mes_api
+
+mes_api -> cache : GET orders:new:page:1
+activate cache
+
+alt Данные есть в кеше
+cache --> mes_api : Данные о заказах
+deactivate cache
+mes_api --> operator : 200 OK\n(данные из кеша)
+deactivate mes_api
+else Данных нет в кеше
+cache --> mes_api : null
+deactivate cache
+
+activate mes_db
+mes_api -> mes_db : SELECT * FROM orders\nWHERE status='new'\nLIMIT 10 OFFSET 0
+mes_db --> mes_api : Результаты запроса
+deactivate mes_db
+
+activate cache
+mes_api -> cache : SET orders:new:page:1\nTTL=30s
+cache --> mes_api : OK
+deactivate cache
+
+mes_api --> operator : 200 OK\n(данные из БД)
+deactivate mes_api
+end
+end box
+
+box "Изменение статуса заказа"
+operator -> mes_api : PUT /api/orders/123/status\n{status: "in_progress",\noperator_id: 45}
+activate mes_api
+
+activate mes_db
+mes_api -> mes_db : UPDATE orders SET\nstatus='in_progress',\noperator_id=45\nWHERE id=123
+mes_db --> mes_api : Подтверждение
+deactivate mes_db
+
+activate cache
+mes_api -> cache : INVALIDATE orders:new:page:*
+cache --> mes_api : OK
+mes_api -> cache : INVALIDATE orders:all:*
+cache --> mes_api : OK
+deactivate cache
+
+activate rabbitmq
+mes_api -> rabbitmq : order.status.updated\n(id=123,\nnew_status=in_progress)
+rabbitmq --> mes_api : OK
+deactivate rabbitmq
+
+mes_api --> operator : 200 OK\nСтатус обновлен
+deactivate mes_api
+end box
+
+@enduml

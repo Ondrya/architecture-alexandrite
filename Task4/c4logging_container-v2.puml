@@ -1,0 +1,89 @@
+@startuml "Александрит - ювелирный маркетплейс"
+
+!include <C4/C4_Container>
+
+left to right direction
+
+' ========== Система ==========
+System_Boundary(jss, "Jewelry Store System") {
+  ' ========== Контейнеры ==========
+  Container(shop_frontend, "Internet Shop", "Vue, TypeScript, Threejs", "User can make an order, upload 3d model, work in 3d editor")
+  Container(shop_api, "Shop API", "SpringBoot", "Provides list of shop items;\nReceives user-generated/uploaded 3D file;\nSaves order info (customer view)") #Orange
+  Container(crm_frontend, "CRM", "Vue, TypeScript", "Manages customer relationships and order tracking")
+  Container(crm_api, "CRM API", "SpringBoot", "Backend for CRM") #Orange
+  Container(mes_api, "MES API", "C#", "Assigns orders to operators;\nShows list of orders;\nCalculates order price") #Orange
+  Container(mes_frontend, "MES", "React, TypeScript", "Interface to assign orders to operators, view order list")
+  
+  ContainerDb(shop_db, "Shop DB", "PostgreSQL", "Holds main info about customers and orders (customer view)")
+  ContainerDb(mes_db, "MES DB", "PostgreSQL", "Holds info about orders, operator assignments, statuses (MES view)")
+  Container(storage, "3D Files Storage", "S3-based storage", "Stores 3D files for price calculation/manufacturing")
+  Container(mq, "Messages Queue", "RabbitMQ", "Sends messages about new orders, status changes via topics") #Orange
+
+  ' ========== НОВЫЕ КОМПОНЕНТЫ (трейсинг) ==========
+  Container(otel_collector, "OpenTelemetry\nCollector", "OTel Collector", "Receives telemetry via OTLP/gRPC") #Red
+  Container(jaeger, "Jaeger", "Jaeger UI", "Stores and visualizes traces") #Red
+
+  ' ========== НОВЫЕ КОМПОНЕНТЫ (Support трейсинг) ==========
+  Person(support, "Support", "Check OTLP data") #Red
+
+  ' ========== НОВЫЕ КОМПОНЕНТЫ (Автоматический анализ трейсов) ==========
+  Container(trace_analitic_service, "Сервиси аналитики трейсов", "Trace Analitic", "Читает трейсы, анализирует и сравнивает с пороговыми значениями") #Green
+
+  ' ========== НОВЫЕ КОМПОНЕНТЫ (ELK) ==========
+  Container(logstash, "Logstash", "Logging processing", "обработка логов") #Violet
+  ContainerDb(elastic, "Elasticsearch", "Logging store", "хранение логов") #Violet
+  Container(kibana, "Kibana", "Logging dashboard", "витрина логов") #Violet
+}
+
+' ========== Люди (акторы) ==========
+Person(customer, "Customer", "Makes orders, uploads 3D models")
+Person(api_user, "API User", "Integrates with MES API")
+Person(seller, "Seller", "Operates orders, confirms manufacturing for user")
+Person(operator, "Operator", "Takes order in work, manufactures jewelry")
+
+
+' ========== Взаимодействия ==========
+Rel(customer, shop_frontend, "")
+Rel(shop_frontend, shop_api, "")
+Rel(shop_api, shop_db, "")
+Rel(shop_api, storage, "")
+'Rel(shop_api, mq, "Publishes\n(order created)")
+
+Rel(seller, crm_frontend, "")
+Rel(crm_frontend, crm_api, "")
+Rel(crm_api, shop_db, "")
+Rel(crm_api, storage, "")
+BiRel(crm_api, mq, "")
+
+Rel(api_user, mes_api, "")
+Rel(mes_api, storage, "")
+Rel(mes_api, mes_db, "")
+BiRel(mq, mes_api, "")
+
+Rel(operator, mes_frontend, "")
+Rel(mes_frontend, mes_api, "")
+
+' ========== Связи новых компонентов ==========
+shop_api -[#red]-> otel_collector : <color:red>OTLP gRPC (traces, metrics)</color>
+crm_api -[#red]-> otel_collector : <color:red>OTLP gRPC (traces, metrics)</color>
+mes_api -[#red]-> otel_collector : <color:red>OTLP gRPC (traces, metrics)</color>
+mq -[#red]-> otel_collector : <color:red>OTLP gRPC (message traces)</color>
+otel_collector -[#red]-> jaeger : <color:red>OTLP gRPC (batched spans)</color>
+support -[#red]-> jaeger : <color:red>check data</color>
+
+trace_analitic_service -[#green]-> jaeger : <color:green>get data</color>
+trace_analitic_service -[#green]-> support : <color:green>notify about ALL OK - by schedule</color>
+trace_analitic_service -[#green]-> support : <color:green>notify about HAS PROBLEM</color>
+
+shop_api -[#Violet]-> logstash : <color:violet>trafic log</color>
+crm_api -[#Violet]-> logstash : <color:violet>trafic log</color>
+mes_api -[#Violet]-> logstash : <color:violet>trafic log</color>
+mq -[#Violet]-> logstash : <color:violet>trafic log</color>
+logstash -[#Violet]-> elastic : <color:violet>store log</color>
+
+kibana -[#Violet]-> elastic : <color:violet>request</color>
+kibana -[#Violet]-> support : <color:violet>notify</color>
+support -[#Violet]-> kibana : <color:violet>request</color>
+
+
+@enduml
